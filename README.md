@@ -26,8 +26,8 @@ Pastikan di komputer sudah terinstall: `Node.js 20+`, `Python 3.10+`, dan `FFmpe
 
 1.  **Clone Repository**
     ```bash
-    git clone https://github.com/yourusername/endownloader.git
-    cd endownloader
+    git clone https://github.com/its-enpii/enmd.git
+    cd enmd
     ```
 
 2.  **Install Dependencies**
