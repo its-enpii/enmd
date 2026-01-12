@@ -34,8 +34,13 @@ const showMoreModal = ref(false);
 const { loading, error, data, fetchVideoInfo } = useDownloader();
 const route = useRoute();
 
-const handleSearch = (url: string) => {
-  fetchVideoInfo(url);
+const urlInputRef = ref();
+
+const handleSearch = async (url: string) => {
+  await fetchVideoInfo(url);
+  if (!error.value) {
+    urlInputRef.value?.clear();
+  }
 };
 
 const selectPlatform = (id: string) => {
@@ -167,6 +172,7 @@ onMounted(() => {
 
     <!-- Input Section -->
     <UrlInput
+      ref="urlInputRef"
       @submit="handleSearch"
       :loading="loading"
       :platform="selectedPlatform"

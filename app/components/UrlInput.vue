@@ -51,7 +51,7 @@ const validateUrl = (input: string, platform: string): boolean => {
   };
 
   if (!patterns[platform]) return true;
-  return patterns[platform].some((regex) => regex.test(input));
+  return patterns[platform]?.some((regex) => regex.test(input)) ?? true;
 };
 
 const handleSubmit = () => {
@@ -89,6 +89,14 @@ const onInputPaste = () => {
     if (url.value) handleSubmit();
   }, 100);
 };
+
+const clear = () => {
+  url.value = "";
+};
+
+defineExpose({
+  clear,
+});
 </script>
 
 <template>
