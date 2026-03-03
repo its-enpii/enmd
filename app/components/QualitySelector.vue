@@ -21,7 +21,11 @@ const handleDownload = async (qualityId: string, url: string) => {
 
   try {
     // 1. Request Server to Render/Merge
-    const filename = await renderVideo(url, qualityId);
+    const filename = await renderVideo(
+      url,
+      qualityId,
+      props.data.playlistIndex
+    );
 
     // Add to history
     addToHistory({
@@ -138,7 +142,7 @@ const handleDownload = async (qualityId: string, url: string) => {
               @click="
                 handleDownload(
                   quality.id,
-                  data.originalUrl || $parent?.url || ''
+                  quality.url || data.originalUrl || ''
                 )
               "
               :disabled="!!downloadingId"

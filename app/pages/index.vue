@@ -189,7 +189,13 @@ onMounted(() => {
     </div>
 
     <!-- Result -->
-    <QualitySelector v-if="data" :data="data" />
+    <div v-if="data && data.length" class="space-y-8">
+      <QualitySelector
+        v-for="(video, index) in data"
+        :key="video.playlistIndex || index"
+        :data="video"
+      />
+    </div>
   </div>
   <MorePlatformsModal
     :show="showMoreModal"
