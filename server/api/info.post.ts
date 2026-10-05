@@ -56,6 +56,9 @@ export default defineEventHandler(async (event) => {
     const output: any = await ytDlp(finalUrl, {
       dumpSingleJson: true,
       noWarnings: true,
+      // Enable the Node.js JS runtime so yt-dlp can solve YouTube's n-sig
+      // challenge and expose the real stream URLs (prevents 403 Forbidden).
+      jsRuntimes: "nodejs",
       // noCallHome is deprecated in recent yt-dlp versions
       // You might want to pass cookies or user agent here if strict
     });

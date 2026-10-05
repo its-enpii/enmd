@@ -17,6 +17,20 @@ const { addToHistory } = useHistory();
 const handleDownload = async (qualityId: string, url: string) => {
   if (downloadingId.value) return;
 
+  // Already rendered before? Serve the cached file instantly, no server call.
+  if (completedDownloads.value[qualityId]) {
+    const cached = completedDownloads.value[qualityId];
+    const a = document.createElement("a");
+    a.href = cached.url;
+    a.download = cached.name;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      if (a.parentNode) document.body.removeChild(a);
+    }, 200);
+    return;
+  }
+
   downloadingId.value = qualityId;
   errorId.value = null;
 
@@ -162,6 +176,18 @@ const handleDownload = async (qualityId: string, url: string) => {
                 <span>Memproses...</span>
               </button>
 
+              <!-- Ready: cached render, instant download -->
+              <button
+                v-else-if="completedDownloads[quality.id]"
+                @click="
+                  handleDownload(quality.id, quality.url || data.originalUrl || '')
+                "
+                class="px-4 py-2.5 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 text-xs sm:text-sm font-bold flex items-center gap-2 cursor-pointer transition-all"
+              >
+                <Download class="w-4 h-4 text-emerald-600" />
+                <span>Unduh File</span>
+              </button>
+
               <!-- Error: offer retry -->
               <button
                 v-else-if="errorId === quality.id"
@@ -188,37 +214,13 @@ const handleDownload = async (qualityId: string, url: string) => {
             </div>
           </div>
 
-          <!-- Bottom status sub-row (full width) -->
-          <div
-            v-if="downloadingId === quality.id"
-            class="pt-2 border-t border-purple-100 flex items-center gap-2 text-xs text-[#3D348B] font-medium animate-pulse"
-          >
-            <Loader2 class="w-3.5 h-3.5 animate-spin flex-none" />
-            <span
-              >Sedang mengonversi &amp; menggabungkan audio/video di server...
-              Mohon tunggu.</span
-            >
-          </div>
-
+          <!-- Compact error message (only when this option failed) -->
           <div
             v-if="errorId === quality.id"
-            class="pt-2 border-t border-red-100 flex items-center gap-1.5 text-xs text-red-600 font-semibold"
+            class="flex items-center gap-1.5 text-xs text-red-600 font-semibold"
           >
             <AlertCircle class="w-3.5 h-3.5 flex-none" />
-            <span>Gagal memproses media. Silakan coba klik Coba Lagi.</span>
-          </div>
-
-          <div
-            v-if="completedDownloads[quality.id]"
-            class="pt-2 border-t border-emerald-100 flex items-center justify-between gap-2 text-xs text-emerald-700 font-semibold"
-          >
-            <span>✅ File siap!</span>
-            <a
-              :href="completedDownloads[quality.id].url"
-              :download="completedDownloads[quality.id].name"
-              class="underline text-emerald-800"
-              >Klik di sini jika unduhan tidak otomatis dimulai</a
-            >
+            <span>Gagal memproses media.</span>
           </div>
         </div>
       </div>

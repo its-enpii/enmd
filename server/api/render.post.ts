@@ -105,6 +105,11 @@ export default defineEventHandler(async (event) => {
       ...formatArgs,
       output: downloadPath,
       noPlaylist: true,
+      // Allow yt-dlp to use the Node.js runtime that ships inside the
+      // container (/usr/local/bin/node on Alpine) to solve YouTube's n-sig
+      // challenge. Without this yt-dlp only looks for `deno` and fails with
+      // "HTTP Error 403: Forbidden" on protected audio/video streams.
+      jsRuntimes: "nodejs",
     };
 
     // Only set ffmpegLocation when we have a real, existing binary path.
