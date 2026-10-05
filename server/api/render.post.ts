@@ -6,33 +6,42 @@ import fs from "fs";
 
 /**
  * Resolve a usable ffmpeg binary path.
+ *
+ * IMPORTANT: never return a bare relative name like "ffmpeg". yt-dlp treats a
+ * relative path as a local file (`./ffmpeg`), NOT as a PATH lookup, so it fails
+ * to find the binary and merges are never performed. Returning `undefined`
+ * lets yt-dlp fall back to its own `$PATH` resolution.
+ *
  * Order of preference:
- *   1. Explicit FFMPEG_PATH env override.
- *   2. Alpine (musl) -> use the system ffmpeg (ffmpeg-static ships a glibc
- *      binary that cannot run on musl libc).
+ *   1. Explicit FFMPEG_PATH env override (must exist on disk).
+ *   2. Common system locations (Alpine: /usr/bin/ffmpeg).
  *   3. ffmpeg-static binary if it exists on disk.
- *   4. Fall back to `ffmpeg` from PATH.
+ *   4. undefined -> let yt-dlp search $PATH.
  */
-function resolveFfmpegPath(): string {
-  if (process.env.FFMPEG_PATH) {
+function resolveFfmpegPath(): string | undefined {
+  if (process.env.FFMPEG_PATH && fs.existsSync(process.env.FFMPEG_PATH)) {
     return process.env.FFMPEG_PATH;
   }
 
-  // Alpine Linux ships its own ffmpeg via apk; ffmpeg-static's glibc binary
-  // crashes there, so always prefer the system binary.
-  if (fs.existsSync("/etc/alpine-release")) {
-    return "ffmpeg";
+  for (const p of ["/usr/bin/ffmpeg", "/usr/local/bin/ffmpeg"]) {
+    if (fs.existsSync(p)) return p;
   }
 
   try {
-    if (ffmpegStatic && typeof ffmpegStatic === "string" && fs.existsSync(ffmpegStatic)) {
+    if (
+      ffmpegStatic &&
+      typeof ffmpegStatic === "string" &&
+      fs.existsSync(ffmpegStatic)
+    ) {
       return ffmpegStatic;
     }
   } catch {
-    // Ignore and fall through to system ffmpeg.
+    // Ignore and fall through.
   }
 
-  return "ffmpeg";
+  // Do NOT return "ffmpeg" here: yt-dlp would look for ./ffmpeg and fail.
+  // Undefined lets yt-dlp resolve the binary from $PATH on its own.
+  return undefined;
 }
 
 export default defineEventHandler(async (event) => {
@@ -46,6 +55,7 @@ export default defineEventHandler(async (event) => {
     });
   }
 
+  const cleanUrl = typeof url === "string" ? url.trim() : url;
   const qualityStr = String(quality);
 
   // Determine format string for yt-dlp
@@ -89,21 +99,38 @@ export default defineEventHandler(async (event) => {
   const downloadPath = join(downloadDir, filename);
 
   try {
-    console.log(`Starting render for ${qualityStr}: ${url} -> ${downloadPath}`);
+    console.log(`Starting render for ${qualityStr}: ${cleanUrl} -> ${downloadPath}`);
 
     const ytOptions: any = {
       ...formatArgs,
       output: downloadPath,
-      ffmpegLocation: resolveFfmpegPath(),
       noPlaylist: true,
     };
+
+    // Only set ffmpegLocation when we have a real, existing binary path.
+    // Passing a bare relative "ffmpeg" makes yt-dlp look for ./ffmpeg and
+    // break the stream merge (resulting in "Failed to render").
+    const ffmpegLoc = resolveFfmpegPath();
+    if (ffmpegLoc) {
+      ytOptions.ffmpegLocation = ffmpegLoc;
+    }
 
     if (playlistIndex) {
       ytOptions.noPlaylist = false;
       ytOptions.playlistItems = `${playlistIndex}`;
     }
 
-    await ytDlp(url, ytOptions);
+    await ytDlp(cleanUrl, ytOptions);
+
+    // Verify the merged/output file actually exists on disk. Without this the
+    // API could report success while the download endpoint later returns 404.
+    if (!fs.existsSync(downloadPath)) {
+      console.error(`Rendered file not found: ${downloadPath}`);
+      throw createError({
+        statusCode: 500,
+        statusMessage: "Render failed: output media file was not generated",
+      });
+    }
 
     // Return the filename so the frontend can request it via /api/file
     return {
@@ -112,6 +139,10 @@ export default defineEventHandler(async (event) => {
     };
   } catch (error: any) {
     console.error("Render processing error:", error);
+    // Preserve an already-formed HTTP error (e.g. the file-verification error).
+    if (error?.statusCode) {
+      throw error;
+    }
     throw createError({
       statusCode: 500,
       statusMessage: "Failed to render media",

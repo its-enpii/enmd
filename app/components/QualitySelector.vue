@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Download, Film, Music, Check, Loader2 } from "lucide-vue-next";
+import { Download, Film, Music, Loader2 } from "lucide-vue-next";
 import { ref } from "vue";
 import { useDownloader } from "~/composables/useDownloader";
 import { useHistory } from "~/composables/useHistory";
@@ -76,13 +76,13 @@ const handleDownload = async (qualityId: string, url: string) => {
 <template>
   <div v-if="data" class="w-full max-w-2xl mx-auto mt-8 animate-fade-in">
     <div
-      class="bg-white rounded-2xl p-6 shadow-xl border border-gray-100 overflow-hidden"
+      class="bg-white rounded-2xl p-4 sm:p-6 shadow-xl border border-gray-100 overflow-hidden"
     >
       <!-- Header / Thumbnail -->
-      <div class="flex flex-col md:flex-row gap-6 mb-6">
+      <div class="flex flex-col sm:flex-row gap-4 mb-5">
         <div
           v-if="data.thumbnail"
-          class="flex-none w-full md:w-32 aspect-video rounded-xl overflow-hidden relative group shadow-md"
+          class="w-full sm:w-36 aspect-video rounded-xl overflow-hidden relative group shadow-sm flex-none"
         >
           <img
             :src="data.thumbnail"
@@ -92,15 +92,15 @@ const handleDownload = async (qualityId: string, url: string) => {
         </div>
         <div class="flex-1 min-w-0">
           <h3
-            class="text-xl font-bold text-[#040303] truncate-2-lines mb-2 leading-tight"
+            class="text-base sm:text-xl font-bold text-[#040303] leading-snug line-clamp-2 mb-1.5"
           >
             {{ data.title || "Media Ready" }}
           </h3>
           <p
-            class="text-gray-500 text-sm flex items-center gap-2"
-            v-if="data.author"
+            class="text-xs text-gray-500 flex items-center gap-2"
+            v-if="data.author || data.duration"
           >
-            <span>By {{ data.author }}</span>
+            <span v-if="data.author">By {{ data.author }}</span>
             <span v-if="data.duration">• {{ data.duration }}</span>
           </p>
         </div>
@@ -111,11 +111,12 @@ const handleDownload = async (qualityId: string, url: string) => {
         <div
           v-for="quality in data.formats"
           :key="quality.id"
-          class="flex items-center justify-between p-4 rounded-xl bg-[#F3F3F3] hover:bg-gray-200 border border-transparent hover:border-gray-300 transition-all group"
+          class="flex items-center justify-between gap-3 min-h-[64px] sm:min-h-[72px] p-3 sm:p-4 rounded-xl bg-[#F3F3F3] hover:bg-gray-200 border border-transparent hover:border-gray-300 transition-all group"
         >
-          <div class="flex items-center gap-3">
+          <!-- Left: icon + format info + dynamic status -->
+          <div class="flex items-center gap-3 min-w-0">
             <div
-              class="w-10 h-10 rounded-full flex items-center justify-center transition-transform group-hover:scale-110"
+              class="w-10 h-10 flex-none rounded-full flex items-center justify-center transition-transform group-hover:scale-110"
               :class="
                 quality.ext === 'mp3'
                   ? 'bg-[#E6AF2E]/20 text-[#b5891d]'
@@ -125,41 +126,46 @@ const handleDownload = async (qualityId: string, url: string) => {
               <Music v-if="quality.ext === 'mp3'" class="w-5 h-5" />
               <Film v-else class="w-5 h-5" />
             </div>
-            <div>
-              <span class="text-[#040303] font-bold block">{{
-                quality.label
-              }}</span>
-              <span class="text-xs text-gray-500 uppercase">{{
-                quality.ext
-              }}</span>
+            <div class="min-w-0">
+              <span
+                class="text-[#040303] font-bold text-sm sm:text-base block leading-tight"
+              >
+                {{ quality.label }}
+              </span>
+              <div class="flex items-center gap-2 mt-0.5">
+                <span class="text-xs text-gray-500 uppercase font-medium">{{
+                  quality.ext
+                }}</span>
+                <span
+                  v-if="downloadingId === quality.id"
+                  class="text-xs font-semibold animate-pulse"
+                  :class="
+                    renderStatus.includes('Failed')
+                      ? 'text-red-500'
+                      : 'text-[#3D348B]'
+                  "
+                >
+                  • {{ renderStatus }}
+                </span>
+              </div>
             </div>
           </div>
 
-          <div class="flex items-center gap-3">
-            <span
+          <!-- Right: download button only -->
+          <button
+            @click="
+              handleDownload(quality.id, quality.url || data.originalUrl || '')
+            "
+            :disabled="!!downloadingId"
+            class="flex-none px-3.5 py-2 sm:px-4 sm:py-2 rounded-lg bg-white text-[#040303] text-xs sm:text-sm font-bold border border-gray-200 hover:bg-[#3D348B] hover:text-white hover:border-[#3D348B] transition-colors flex items-center gap-2 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+          >
+            <Loader2
               v-if="downloadingId === quality.id"
-              class="text-xs text-[#3D348B] font-medium animate-pulse"
-              >{{ renderStatus }}</span
-            >
-
-            <button
-              @click="
-                handleDownload(
-                  quality.id,
-                  quality.url || data.originalUrl || ''
-                )
-              "
-              :disabled="!!downloadingId"
-              class="px-4 py-2 rounded-lg bg-white text-[#040303] font-bold border border-gray-200 hover:bg-[#3D348B] hover:text-white hover:border-[#3D348B] transition-colors flex items-center gap-2 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-            >
-              <Loader2
-                v-if="downloadingId === quality.id"
-                class="w-4 h-4 animate-spin"
-              />
-              <Download v-else class="w-4 h-4" />
-              {{ downloadingId === quality.id ? "Processing" : "Download" }}
-            </button>
-          </div>
+              class="w-4 h-4 animate-spin"
+            />
+            <Download v-else class="w-4 h-4" />
+            {{ downloadingId === quality.id ? "Processing" : "Download" }}
+          </button>
         </div>
       </div>
     </div>
@@ -167,7 +173,7 @@ const handleDownload = async (qualityId: string, url: string) => {
 </template>
 
 <style scoped>
-.truncate-2-lines {
+.line-clamp-2 {
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;

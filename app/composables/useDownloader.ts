@@ -31,7 +31,10 @@ export const useDownloader = () => {
       }
 
       // result is now an array of video info objects
-      data.value = result.map((item: any) => ({ ...item, originalUrl: url }));
+      data.value = result.map((item: any) => ({
+        ...item,
+        originalUrl: item.originalUrl || url,
+      }));
     } catch (err: any) {
       error.value = err.message || "An error occurred";
       console.error(err);
