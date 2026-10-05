@@ -36,7 +36,7 @@ const validateUrl = (input: string, platform: string): boolean => {
   if (!platform || platform === "auto" || platform === "more") return true;
 
   const patterns: Record<string, RegExp[]> = {
-    tiktok: [/tiktok\.com/, /vm\.tiktok\.com/],
+    tiktok: [/tiktok\.com/, /vm\.tiktok\.com/, /vt\.tiktok\.com/],
     youtube: [/youtube\.com/, /youtu\.be/],
     instagram: [/instagram\.com/],
     facebook: [/facebook\.com/, /fb\.watch/],
@@ -46,7 +46,7 @@ const validateUrl = (input: string, platform: string): boolean => {
     vimeo: [/vimeo\.com/],
     dailymotion: [/dailymotion\.com/, /dai\.ly/],
     reddit: [/reddit\.com/],
-    threads: [/threads\.net/],
+    threads: [/threads\.(net|com)/],
     mixcloud: [/mixcloud\.com/],
   };
 
@@ -56,6 +56,7 @@ const validateUrl = (input: string, platform: string): boolean => {
 
 const handleSubmit = () => {
   error.value = "";
+  url.value = url.value.trim();
   if (!url.value) return;
 
   if (props.platform && !validateUrl(url.value, props.platform)) {
@@ -86,6 +87,7 @@ const handlePaste = async () => {
 const onInputPaste = () => {
   // Wait for input value to update
   setTimeout(() => {
+    url.value = url.value.trim();
     if (url.value) handleSubmit();
   }, 100);
 };

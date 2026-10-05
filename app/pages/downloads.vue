@@ -10,7 +10,6 @@ const { history, removeHistoryItem, clearHistory } = useHistory();
 const allowCookies = () => {
   localStorage.setItem("cookie_consent", "true");
   cookieConsent.value = "true";
-  window.location.reload();
 };
 
 const handleDownloadAgain = (url: string) => {

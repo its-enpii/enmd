@@ -47,7 +47,11 @@ const handleDownload = async (qualityId: string, url: string) => {
       .replace(/-+/g, "-") // Replace multiple hyphens with single
       .replace(/^-|-$/g, ""); // Trim hyphens
 
-    const finalName = `enmd-${safeTitle}-${qualityId}.mp4`;
+    const isAudio =
+      qualityId === "audio" ||
+      props.data.formats?.find((f: any) => f.id === qualityId)?.ext === "mp3";
+    const ext = isAudio ? "mp3" : "mp4";
+    const finalName = `enmd-${safeTitle}-${qualityId}.${ext}`;
 
     window.location.href = `/api/file?filename=${filename}&name=${encodeURIComponent(
       finalName

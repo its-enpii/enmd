@@ -85,20 +85,12 @@ onMounted(() => {
         <div
           class="w-12 h-12 bg-white rounded-xl flex items-center justify-center shadow-lg rotate-12"
         >
-          <img
-            src="https://upload.wikimedia.org/wikipedia/commons/e/e7/Instagram_logo_2016.svg"
-            class="w-8 h-8"
-            alt="Instagram"
-          />
+          <Instagram class="w-7 h-7 text-pink-500" />
         </div>
         <div
           class="w-12 h-12 bg-white rounded-xl flex items-center justify-center shadow-lg -rotate-6"
         >
-          <img
-            src="https://upload.wikimedia.org/wikipedia/commons/b/b8/YouTube_Logo_2017.svg"
-            class="w-8 h-8"
-            alt="YouTube"
-          />
+          <Youtube class="w-7 h-7 text-red-500" />
         </div>
         <div
           class="w-12 h-12 bg-black rounded-xl flex items-center justify-center shadow-lg rotate-3"

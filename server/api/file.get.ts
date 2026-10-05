@@ -32,13 +32,18 @@ export default defineEventHandler(async (event) => {
     // Use provided name or default to system filename
     const finalName = downloadName ? downloadName : filename;
 
+    // Sanitize the download name to prevent CRLF / header injection.
+    const safeName = finalName.replace(/[\r\n"]/g, "_");
+
     // Set headers for download
     const stat = fs.statSync(filePath);
     setHeader(event, "Content-Length", stat.size);
     setHeader(
       event,
       "Content-Disposition",
-      `attachment; filename="${finalName}"`
+      `attachment; filename="${safeName}"; filename*=UTF-8''${encodeURIComponent(
+        safeName
+      )}`
     );
     setHeader(
       event,

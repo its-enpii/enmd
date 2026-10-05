@@ -3,6 +3,10 @@ import { ref, onMounted } from "vue";
 
 const isVisible = ref(false);
 
+const emit = defineEmits<{
+  (e: "update", status: string): void;
+}>();
+
 onMounted(() => {
   const consent = localStorage.getItem("cookie_consent");
   if (consent === null) {
@@ -15,11 +19,13 @@ onMounted(() => {
 
 const acceptCookies = () => {
   localStorage.setItem("cookie_consent", "true");
+  emit("update", "true");
   isVisible.value = false;
 };
 
 const declineCookies = () => {
   localStorage.setItem("cookie_consent", "false");
+  emit("update", "false");
   isVisible.value = false;
 };
 </script>

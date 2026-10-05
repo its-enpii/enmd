@@ -9,16 +9,36 @@ export default defineEventHandler(async (event) => {
   }
 
   // Fix common URL issues
-  // Threads often gets confused with threads.com
-  let finalUrl = url;
-  if (url.includes("threads.com")) {
-    finalUrl = url.replace("threads.com", "threads.net");
+  // Threads often gets confused with threads.com -> threads.net
+  let finalUrl = typeof url === "string" ? url.trim() : url;
+  if (finalUrl.includes("threads.com")) {
+    finalUrl = finalUrl.replace("threads.com", "threads.net");
   }
 
-  // Remove query parameters
+  // Only strip tracking & referral parameters.
+  // IMPORTANT: parameters such as `v` (YouTube/Facebook), `list`, playlist
+  // ids, etc. MUST be preserved, otherwise yt-dlp treats the link as an
+  // empty feed (`entries: []`) and the UI shows nothing.
+  const TRACKING_PARAMS = [
+    "utm_source",
+    "utm_medium",
+    "utm_campaign",
+    "utm_term",
+    "utm_content",
+    "si",
+    "fbclid",
+    "igsh",
+    "igshid",
+    "feature",
+    "ref",
+    "s",
+  ];
+
   try {
     const urlObj = new URL(finalUrl);
-    urlObj.search = "";
+    for (const param of TRACKING_PARAMS) {
+      urlObj.searchParams.delete(param);
+    }
     finalUrl = urlObj.toString();
     // Remove trailing slash if present (optional but cleaner)
     if (finalUrl.endsWith("/")) {
@@ -77,13 +97,20 @@ export default defineEventHandler(async (event) => {
         hasAudio: true,
       });
 
+      // Duration fallback: format raw seconds into mm:ss / hh:mm:ss
+      let duration = entry.duration_string;
+      if (!duration && typeof entry.duration === "number") {
+        duration = formatDuration(entry.duration);
+      }
+
       return {
         title: entry.title,
         thumbnail: entry.thumbnail,
         author: entry.uploader,
-        duration: entry.duration_string,
+        duration: duration || "",
         formats: formats,
         playlistIndex: index,
+        originalUrl: finalUrl,
       };
     };
 
@@ -206,6 +233,17 @@ export default defineEventHandler(async (event) => {
     });
   }
 });
+
+function formatDuration(totalSeconds: number): string {
+  if (!Number.isFinite(totalSeconds) || totalSeconds < 0) return "";
+  const seconds = Math.floor(totalSeconds % 60);
+  const minutes = Math.floor((totalSeconds / 60) % 60);
+  const hours = Math.floor(totalSeconds / 3600);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return hours > 0
+    ? `${hours}:${pad(minutes)}:${pad(seconds)}`
+    : `${minutes}:${pad(seconds)}`;
+}
 
 async function extractThreadsData(url: string) {
   const response = await fetch(url, {

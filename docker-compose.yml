@@ -1,0 +1,23 @@
+services:
+  enmd:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: enmd:latest
+    container_name: enmd
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      NITRO_PORT: 3000
+      NITRO_HOST: 0.0.0.0
+    volumes:
+      - ./downloads:/app/downloads
+    ports:
+      - "127.0.0.1:3005:3000"
+    networks:
+      - npm_net
+
+networks:
+  npm_net:
+    external: true
+    name: nginx-proxy-manager_default
