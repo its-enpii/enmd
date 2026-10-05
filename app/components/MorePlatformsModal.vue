@@ -8,6 +8,9 @@ import {
   MessagesSquare,
   Globe,
   Radio,
+  Disc3,
+  Mic2,
+  Apple,
 } from "lucide-vue-next";
 
 defineProps<{
@@ -43,7 +46,10 @@ const extraPlatforms = [
   },
   { id: "threads", name: "Threads", icon: Globe, color: "text-black" },
   { id: "mixcloud", name: "Mixcloud", icon: Radio, color: "text-indigo-500" },
-  // Add more as needed
+  { id: "spotify", name: "Spotify", icon: Disc3, color: "text-green-500" },
+  { id: "bandcamp", name: "Bandcamp", icon: Mic2, color: "text-sky-500" },
+  { id: "audiomack", name: "Audiomack", icon: Music2, color: "text-orange-600" },
+  { id: "applemusic", name: "Apple Music", icon: Apple, color: "text-pink-500" },
 ];
 </script>
 

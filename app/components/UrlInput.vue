@@ -30,6 +30,10 @@ const placeholders: Record<string, string> = {
   reddit: "Paste Reddit video link...",
   threads: "Paste Threads video link...",
   mixcloud: "Paste Mixcloud link...",
+  spotify: "Paste Spotify track link...",
+  bandcamp: "Paste Bandcamp track/album link...",
+  audiomack: "Paste Audiomack song link...",
+  applemusic: "Paste Apple Music link...",
 };
 
 const validateUrl = (input: string, platform: string): boolean => {
@@ -48,6 +52,10 @@ const validateUrl = (input: string, platform: string): boolean => {
     reddit: [/reddit\.com/],
     threads: [/threads\.(net|com)/],
     mixcloud: [/mixcloud\.com/],
+    spotify: [/spotify\.com/, /open\.spotify\.com/],
+    bandcamp: [/bandcamp\.com/],
+    audiomack: [/audiomack\.com/],
+    applemusic: [/music\.apple\.com/],
   };
 
   if (!patterns[platform]) return true;

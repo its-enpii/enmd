@@ -3,7 +3,7 @@ import Sidebar from "~/components/Sidebar.vue";
 import Footer from "~/components/Footer.vue";
 import CookieConsent from "~/components/CookieConsent.vue";
 import { onMounted, ref } from "vue";
-import { useState } from "#app";
+import { useState, useHead } from "#app";
 import {
   Menu,
   Youtube,
@@ -13,6 +13,30 @@ import {
   Twitch,
   Music2,
 } from "lucide-vue-next";
+
+// SEO: Schema.org WebApplication structured data (rendered during SSR).
+useHead({
+  script: [
+    {
+      type: "application/ld+json",
+      innerHTML: JSON.stringify({
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        name: "ENMD",
+        url: "https://enmd.enpiistudio.com",
+        description:
+          "Free social media video and music downloader supporting YouTube, TikTok, Instagram, Threads, Facebook, SoundCloud and more.",
+        applicationCategory: "MultimediaApplication",
+        operatingSystem: "All",
+        offers: {
+          "@type": "Offer",
+          price: "0",
+          priceCurrency: "USD",
+        },
+      }),
+    },
+  ],
+});
 
 // Initialize global state for cookie consent
 const cookieConsent = useState<string | null>("cookieConsent", () => null);
@@ -109,7 +133,7 @@ const updateConsent = (status: string) => {
 
     <!-- Main Content -->
     <main
-      class="flex-1 md:ml-64 p-4 md:p-8 transition-all duration-300 relative z-10"
+      class="flex-1 md:ml-64 p-4 md:p-8 transition-all duration-300 relative z-10 flex flex-col min-h-screen"
     >
       <!-- Header / Top Bar (Mobile) -->
       <header class="md:hidden flex items-center justify-between mb-8">
@@ -132,12 +156,14 @@ const updateConsent = (status: string) => {
       </header>
 
       <!-- Center Container -->
-      <div class="max-w-4xl mx-auto mt-4 md:mt-12">
+      <div class="max-w-4xl w-full mx-auto mt-4 md:mt-12 flex-1 flex flex-col">
         <!-- Page Content -->
-        <NuxtPage />
+        <div class="flex-1">
+          <NuxtPage />
+        </div>
 
-        <!-- Footer -->
-        <Footer />
+        <!-- Footer pinned to bottom (sticky footer) -->
+        <Footer class="mt-auto" />
         <CookieConsent @update="updateConsent" />
       </div>
     </main>

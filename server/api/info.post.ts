@@ -1,5 +1,4 @@
 import ytDlp from "yt-dlp-exec";
-import { randomUUID } from "crypto";
 
 export default defineEventHandler(async (event) => {
   const { url } = await readBody(event);
@@ -49,6 +48,24 @@ export default defineEventHandler(async (event) => {
     console.warn("URL parsing failed during sanitization:", e);
   }
 
+  // ---------------------------------------------------------------------------
+  // Spotify resolver: Spotify does not expose streamable media to yt-dlp. We
+  // fetch official metadata through the public oEmbed endpoint and then locate
+  // the real audio stream on YouTube (ytsearch) so we can hand the user a
+  // genuine, downloadable audio file.
+  // ---------------------------------------------------------------------------
+  if (finalUrl.includes("spotify.com")) {
+    try {
+      console.log("Resolving Spotify track via oEmbed:", finalUrl);
+      const spotify = await resolveSpotify(finalUrl);
+      if (spotify && spotify.length > 0) {
+        return spotify;
+      }
+    } catch (spotifyError) {
+      console.error("Spotify resolver failed:", spotifyError);
+    }
+  }
+
   try {
     console.log("Fetching info for:", finalUrl);
 
@@ -58,7 +75,9 @@ export default defineEventHandler(async (event) => {
       noWarnings: true,
       // Enable the Node.js JS runtime so yt-dlp can solve YouTube's n-sig
       // challenge and expose the real stream URLs (prevents 403 Forbidden).
-      jsRuntimes: "nodejs",
+      // NOTE: the value MUST be "node" — "nodejs" makes yt-dlp emit a warning
+      // and fail to pick up the runtime.
+      jsRuntimes: "node",
       // noCallHome is deprecated in recent yt-dlp versions
       // You might want to pass cookies or user agent here if strict
     });
@@ -67,38 +86,71 @@ export default defineEventHandler(async (event) => {
       const formats = [];
       const availableFormats = entry.formats || [];
 
-      // 1080p
-      if (availableFormats.some((f: any) => f.height >= 1080)) {
-        formats.push({
-          label: "1080p (HD)",
-          id: "1080",
-          ext: "mp4",
-          hasAudio: true,
-        });
-      }
-      // 720p
-      if (availableFormats.some((f: any) => f.height >= 720)) {
-        formats.push({
-          label: "720p (HD)",
-          id: "720",
-          ext: "mp4",
-          hasAudio: true,
-        });
-      }
-      // 480p
-      if (availableFormats.some((f: any) => f.height >= 480)) {
-        formats.push({ label: "480p", id: "480", ext: "mp4", hasAudio: true });
-      }
-      // 360p
-      formats.push({ label: "360p", id: "360", ext: "mp4", hasAudio: true });
+      // Detect audio-only sources. SoundCloud / Mixcloud / Bandcamp /
+      // Audiomack and video entries with `vcodec === "none"` (or no video
+      // resolution at all) must NOT advertise fake video qualities such as
+      // 360p / 1080p — that produces files that do not exist.
+      const hasVideoStream = availableFormats.some(
+        (f: any) =>
+          f &&
+          f.vcodec &&
+          f.vcodec !== "none" &&
+          (typeof f.height === "number" || typeof f.width === "number")
+      );
+      const isAudioOnly =
+        !hasVideoStream ||
+        entry.vcodec === "none" ||
+        (Array.isArray(availableFormats) &&
+          availableFormats.length > 0 &&
+          availableFormats.every((f: any) => !f || f.vcodec === "none"));
 
-      // Audio Only
-      formats.push({
-        label: "Audio Only",
-        id: "audio",
-        ext: "mp3",
-        hasAudio: true,
-      });
+      if (isAudioOnly) {
+        // Pure audio: expose a single, honest "Audio High Quality" option.
+        formats.push({
+          label: "Audio High Quality",
+          id: "audio",
+          ext: "mp3",
+          hasAudio: true,
+        });
+      } else {
+        // 1080p
+        if (availableFormats.some((f: any) => f.height >= 1080)) {
+          formats.push({
+            label: "1080p (HD)",
+            id: "1080",
+            ext: "mp4",
+            hasAudio: true,
+          });
+        }
+        // 720p
+        if (availableFormats.some((f: any) => f.height >= 720)) {
+          formats.push({
+            label: "720p (HD)",
+            id: "720",
+            ext: "mp4",
+            hasAudio: true,
+          });
+        }
+        // 480p
+        if (availableFormats.some((f: any) => f.height >= 480)) {
+          formats.push({
+            label: "480p",
+            id: "480",
+            ext: "mp4",
+            hasAudio: true,
+          });
+        }
+        // 360p
+        formats.push({ label: "360p", id: "360", ext: "mp4", hasAudio: true });
+
+        // Audio Only
+        formats.push({
+          label: "Audio Only",
+          id: "audio",
+          ext: "mp3",
+          hasAudio: true,
+        });
+      }
 
       // Duration fallback: format raw seconds into mm:ss / hh:mm:ss
       let duration = entry.duration_string;
@@ -208,7 +260,7 @@ export default defineEventHandler(async (event) => {
             duration: "",
             formats: [
               {
-                label: "Download",
+                label: "Download MP4",
                 id: "fallback-" + index,
                 ext: "mp4",
                 hasAudio: true,
@@ -248,6 +300,91 @@ function formatDuration(totalSeconds: number): string {
     : `${minutes}:${pad(seconds)}`;
 }
 
+/**
+ * Resolve a Spotify track/album/episode link into a downloadable audio entry.
+ *
+ * Steps:
+ *  1. Fetch official metadata (title + artwork) through Spotify's public
+ *     oEmbed endpoint — no API credentials required.
+ *  2. Search YouTube for the matching audio and extract its best audio stream
+ *     via yt-dlp (`ytsearch1:<title> audio`).
+ *  3. Return an audio-only MP3 format enriched with Spotify thumbnail/artist.
+ */
+async function resolveSpotify(url: string) {
+  const oembedUrl = `https://open.spotify.com/oembed?url=${encodeURIComponent(
+    url
+  )}`;
+
+  const resp = await fetch(oembedUrl, {
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      Accept: "application/json",
+    },
+  });
+
+  if (!resp.ok) {
+    throw new Error(`Spotify oEmbed failed with ${resp.status}`);
+  }
+
+  const meta: any = await resp.json();
+  const title: string = meta.title || "Spotify Track";
+  const thumbnail: string = meta.thumbnail_url || "";
+  // Spotify oEmbed exposes the creator as `author_name`.
+  const artist: string = meta.author_name || "Spotify";
+
+  console.log(`Spotify metadata resolved: "${title}" by ${artist}`);
+
+  let source: any = null;
+  try {
+    // ytsearch1: returns the first YouTube result for our query.
+    source = await ytDlp(`ytsearch1:${title} audio`, {
+      dumpSingleJson: true,
+      noWarnings: true,
+      jsRuntimes: "node",
+    });
+  } catch (searchError) {
+    console.error("Spotify YouTube audio search failed:", searchError);
+  }
+
+  // ytsearch may return a playlist wrapper; unwrap the first entry.
+  if (source && source.entries && source.entries.length > 0) {
+    source = source.entries[0];
+  }
+
+  let duration = "";
+  if (source) {
+    duration = source.duration_string || "";
+    if (!duration && typeof source.duration === "number") {
+      duration = formatDuration(source.duration);
+    }
+  }
+
+  return [
+    {
+      title,
+      thumbnail: thumbnail || source?.thumbnail || "",
+      author: artist,
+      duration,
+      formats: [
+        {
+          label: "Audio High Quality",
+          id: "audio",
+          ext: "mp3",
+          hasAudio: true,
+        },
+      ],
+      playlistIndex: null,
+      originalUrl: url,
+    },
+  ];
+}
+
+/**
+ * Extract every video from a Threads post, including multi-video carousels.
+ * Returns one entry per video so the frontend renders a separate card for
+ * each one, each carrying its own direct CDN URL for native downloading.
+ */
 async function extractThreadsData(url: string) {
   const response = await fetch(url, {
     headers: {
@@ -284,15 +421,16 @@ async function extractThreadsData(url: string) {
       });
     }
 
-    // Carousel
+    // Carousel: walk every media item, keeping each video separately so a
+    // single post with multiple videos yields multiple downloadable entries.
     if (post.carousel_media && Array.isArray(post.carousel_media)) {
-      post.carousel_media.forEach((media: any) => {
+      post.carousel_media.forEach((media: any, mediaIdx: number) => {
         if (media.video_versions && media.video_versions.length > 0) {
           items.push({
             type: "video",
             versions: media.video_versions,
             image_versions: media.image_versions2,
-            pk: media.pk || post.pk,
+            pk: (media.pk || post.pk || "") + "_" + mediaIdx,
             caption: media.caption?.text || post.caption?.text || "",
             user: post.user,
           });
@@ -337,7 +475,9 @@ async function extractThreadsData(url: string) {
           });
         }
       });
-    } catch (e) {}
+    } catch (e) {
+      // Ignore malformed script blocks.
+    }
   }
 
   if (allVideos.length === 0) throw new Error("No videos found in HTML");
@@ -354,13 +494,16 @@ async function extractThreadsData(url: string) {
     const bestVideo = v.versions[0];
 
     return {
-      title: v.caption ? v.caption.substring(0, 100) : `Threads Video ${i + 1}`,
+      title:
+        v.caption && v.caption.trim()
+          ? v.caption.substring(0, 100)
+          : `Video ${i + 1}`,
       thumbnail: v.image_versions?.candidates?.[0]?.url || "",
       author: v.user?.username || "threads_user",
       duration: "",
       formats: [
         {
-          label: "Best Quality",
+          label: "Download MP4",
           id: "threads-v" + i,
           ext: "mp4",
           hasAudio: true,

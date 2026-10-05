@@ -3,7 +3,7 @@ import { Heart } from "lucide-vue-next";
 </script>
 
 <template>
-  <footer class="mt-12 pt-8 pb-8 border-t border-gray-200/60">
+  <footer class="pt-8 pb-8 md:pt-12 border-t border-gray-200/60">
     <div
       class="max-w-4xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-6"
     >

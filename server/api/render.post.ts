@@ -3,6 +3,8 @@ import ffmpegStatic from "ffmpeg-static";
 import { join } from "path";
 import { randomUUID } from "crypto";
 import fs from "fs";
+import { pipeline } from "stream/promises";
+import { Readable } from "stream";
 
 /**
  * Resolve a usable ffmpeg binary path.
@@ -98,6 +100,56 @@ export default defineEventHandler(async (event) => {
   const filename = `${randomUUID()}.${ext}`;
   const downloadPath = join(downloadDir, filename);
 
+  // ---------------------------------------------------------------------------
+  // Direct CDN download path.
+  //
+  // Threads carousels / fallback resolvers hand us a direct, already-merged
+  // media URL (Instagram/Facebook CDN, Google Video, or a plain .mp4). Running
+  // yt-dlp against these opaque CDN URLs makes it crash, so we stream the file
+  // ourselves with native fetch() + a Node stream pipeline.
+  // ---------------------------------------------------------------------------
+  const isDirectCdn =
+    typeof cleanUrl === "string" &&
+    (cleanUrl.includes(".cdninstagram.com") ||
+      cleanUrl.includes(".fbcdn.net") ||
+      cleanUrl.includes("googlevideo.com") ||
+      /\.mp4(\?|$)/i.test(cleanUrl));
+
+  if (
+    qualityStr.startsWith("threads-") ||
+    qualityStr.startsWith("fallback-") ||
+    isDirectCdn
+  ) {
+    console.log(`Direct CDN download: ${cleanUrl} -> ${downloadPath}`);
+
+    const resp = await fetch(cleanUrl, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      },
+    });
+
+    if (!resp.ok) {
+      throw createError({
+        statusCode: resp.status,
+        statusMessage: "Direct video fetch failed",
+      });
+    }
+
+    const fileStream = fs.createWriteStream(downloadPath);
+    await pipeline(Readable.fromWeb(resp.body as any), fileStream);
+
+    // Verify the file was actually written before reporting success.
+    if (!fs.existsSync(downloadPath) || fs.statSync(downloadPath).size === 0) {
+      throw createError({
+        statusCode: 500,
+        statusMessage: "Render failed: direct download produced no data",
+      });
+    }
+
+    return { status: "success", filename };
+  }
+
   try {
     console.log(`Starting render for ${qualityStr}: ${cleanUrl} -> ${downloadPath}`);
 
@@ -109,7 +161,7 @@ export default defineEventHandler(async (event) => {
       // container (/usr/local/bin/node on Alpine) to solve YouTube's n-sig
       // challenge. Without this yt-dlp only looks for `deno` and fails with
       // "HTTP Error 403: Forbidden" on protected audio/video streams.
-      jsRuntimes: "nodejs",
+      jsRuntimes: "node",
     };
 
     // Only set ffmpegLocation when we have a real, existing binary path.
@@ -125,7 +177,32 @@ export default defineEventHandler(async (event) => {
       ytOptions.playlistItems = `${playlistIndex}`;
     }
 
-    await ytDlp(cleanUrl, ytOptions);
+    // -------------------------------------------------------------------------
+    // Spotify resolution.
+    //
+    // yt-dlp cannot download Spotify URLs directly (DRM protected) and fails
+    // with an HTTP 500. Resolve the track title via Spotify's public oembed
+    // endpoint and turn it into a YouTube search query (`ytsearch1:`), which
+    // yt-dlp can download as audio.
+    // -------------------------------------------------------------------------
+    let targetUrl = cleanUrl;
+    if (typeof targetUrl === "string" && targetUrl.includes("spotify.com")) {
+      try {
+        const oembedUrl = `https://open.spotify.com/oembed?url=${encodeURIComponent(targetUrl)}`;
+        const res = await fetch(oembedUrl);
+        if (res.ok) {
+          const data: any = await res.json();
+          if (data.title) {
+            targetUrl = `ytsearch1:${data.title} audio`;
+            console.log(`Resolved Spotify to search query: ${targetUrl}`);
+          }
+        }
+      } catch (e) {
+        console.warn("Failed to resolve Spotify oembed in render:", e);
+      }
+    }
+
+    await ytDlp(targetUrl, ytOptions);
 
     // Verify the merged/output file actually exists on disk. Without this the
     // API could report success while the download endpoint later returns 404.
