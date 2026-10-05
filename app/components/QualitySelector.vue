@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Download, Film, Music, Loader2 } from "lucide-vue-next";
+import { Download, Film, Music, Loader2, RotateCcw, AlertCircle } from "lucide-vue-next";
 import { ref } from "vue";
 import { useDownloader } from "~/composables/useDownloader";
 import { useHistory } from "~/composables/useHistory";
@@ -9,7 +9,8 @@ const props = defineProps<{
 }>();
 
 const downloadingId = ref<string | null>(null);
-const renderStatus = ref<string>("");
+const errorId = ref<string | null>(null);
+const completedDownloads = ref<Record<string, { url: string; name: string }>>({});
 const { renderVideo } = useDownloader();
 const { addToHistory } = useHistory();
 
@@ -17,7 +18,7 @@ const handleDownload = async (qualityId: string, url: string) => {
   if (downloadingId.value) return;
 
   downloadingId.value = qualityId;
-  renderStatus.value = "Rendering... (This may take a moment)";
+  errorId.value = null;
 
   try {
     // 1. Request Server to Render/Merge
@@ -27,7 +28,7 @@ const handleDownload = async (qualityId: string, url: string) => {
       props.data.playlistIndex
     );
 
-    // Add to history
+    // Add to history (never allowed to break the download flow)
     addToHistory({
       title: props.data.title || "Unknown Video",
       thumbnail: props.data.thumbnail || "",
@@ -37,9 +38,7 @@ const handleDownload = async (qualityId: string, url: string) => {
       duration: props.data.duration,
     });
 
-    // 2. Auto Download when ready
-    renderStatus.value = "Starting Download...";
-
+    // 2. Trigger download when ready
     // Construct filename: enmd-title-quality.mp4
     const safeTitle = (props.data.title || "video")
       .toLowerCase()
@@ -53,22 +52,33 @@ const handleDownload = async (qualityId: string, url: string) => {
     const ext = isAudio ? "mp3" : "mp4";
     const finalName = `enmd-${safeTitle}-${qualityId}.${ext}`;
 
-    window.location.href = `/api/file?filename=${filename}&name=${encodeURIComponent(
+    const downloadUrl = `/api/file?filename=${filename}&name=${encodeURIComponent(
       finalName
     )}`;
+
+    // Remember the direct link so mobile browsers (iOS Safari etc.) that block
+    // auto-download can offer a manual tap-to-download link.
+    completedDownloads.value[qualityId] = { url: downloadUrl, name: finalName };
+
+    const a = document.createElement("a");
+    a.href = downloadUrl;
+    a.download = finalName;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      if (a.parentNode) document.body.removeChild(a);
+    }, 200);
 
     // Reset after short delay
     setTimeout(() => {
       downloadingId.value = null;
-      renderStatus.value = "";
     }, 3000);
   } catch (err) {
     console.error(err);
-    renderStatus.value = "Failed to render!";
-    setTimeout(() => {
-      downloadingId.value = null;
-      renderStatus.value = "";
-    }, 3000);
+    // Immediately reset so the button never stays stuck on "Processing".
+    downloadingId.value = null;
+    // Mark the failing option so its button becomes "Coba Lagi".
+    errorId.value = qualityId;
   }
 };
 </script>
@@ -111,61 +121,105 @@ const handleDownload = async (qualityId: string, url: string) => {
         <div
           v-for="quality in data.formats"
           :key="quality.id"
-          class="flex items-center justify-between gap-3 min-h-[64px] sm:min-h-[72px] p-3 sm:p-4 rounded-xl bg-[#F3F3F3] hover:bg-gray-200 border border-transparent hover:border-gray-300 transition-all group"
+          class="bg-[#F8F9FA] hover:bg-gray-100 rounded-2xl p-4 border border-gray-100 transition-all flex flex-col gap-2.5"
         >
-          <!-- Left: icon + format info + dynamic status -->
-          <div class="flex items-center gap-3 min-w-0">
-            <div
-              class="w-10 h-10 flex-none rounded-full flex items-center justify-center transition-transform group-hover:scale-110"
-              :class="
-                quality.ext === 'mp3'
-                  ? 'bg-[#E6AF2E]/20 text-[#b5891d]'
-                  : 'bg-[#3D348B]/10 text-[#3D348B]'
-              "
-            >
-              <Music v-if="quality.ext === 'mp3'" class="w-5 h-5" />
-              <Film v-else class="w-5 h-5" />
-            </div>
-            <div class="min-w-0">
-              <span
-                class="text-[#040303] font-bold text-sm sm:text-base block leading-tight"
+          <!-- Main row: info on the left, action button on the right -->
+          <div class="flex items-center justify-between gap-3">
+            <!-- Left: icon + format info, vertically centered -->
+            <div class="flex items-center gap-3 min-w-0">
+              <div
+                class="w-11 h-11 rounded-xl flex items-center justify-center flex-none"
+                :class="
+                  quality.ext === 'mp3'
+                    ? 'bg-[#E6AF2E]/20 text-[#b5891d]'
+                    : 'bg-[#3D348B]/10 text-[#3D348B]'
+                "
               >
-                {{ quality.label }}
-              </span>
-              <div class="flex items-center gap-2 mt-0.5">
-                <span class="text-xs text-gray-500 uppercase font-medium">{{
+                <Music v-if="quality.ext === 'mp3'" class="w-5 h-5" />
+                <Film v-else class="w-5 h-5" />
+              </div>
+              <div class="min-w-0">
+                <span
+                  class="text-sm sm:text-base font-bold text-gray-900 leading-tight block truncate"
+                >
+                  {{ quality.label }}
+                </span>
+                <span class="text-xs font-semibold uppercase text-gray-400">{{
                   quality.ext
                 }}</span>
-                <span
-                  v-if="downloadingId === quality.id"
-                  class="text-xs font-semibold animate-pulse"
-                  :class="
-                    renderStatus.includes('Failed')
-                      ? 'text-red-500'
-                      : 'text-[#3D348B]'
-                  "
-                >
-                  • {{ renderStatus }}
-                </span>
               </div>
+            </div>
+
+            <!-- Right: action button -->
+            <div class="flex-none">
+              <!-- Rendering -->
+              <button
+                v-if="downloadingId === quality.id"
+                disabled
+                class="px-4 py-2.5 rounded-xl bg-purple-50 text-[#3D348B] border border-purple-200 text-xs sm:text-sm font-bold flex items-center gap-2 cursor-wait"
+              >
+                <Loader2 class="w-4 h-4 animate-spin" />
+                <span>Memproses...</span>
+              </button>
+
+              <!-- Error: offer retry -->
+              <button
+                v-else-if="errorId === quality.id"
+                @click="
+                  handleDownload(quality.id, quality.url || data.originalUrl || '')
+                "
+                class="px-4 py-2.5 rounded-xl bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 text-xs sm:text-sm font-bold flex items-center gap-2 cursor-pointer"
+              >
+                <RotateCcw class="w-4 h-4" />
+                <span>Coba Lagi</span>
+              </button>
+
+              <!-- Normal -->
+              <button
+                v-else
+                @click="
+                  handleDownload(quality.id, quality.url || data.originalUrl || '')
+                "
+                class="px-4 py-2.5 rounded-xl bg-white text-[#040303] border border-gray-200 hover:bg-[#3D348B] hover:text-white hover:border-[#3D348B] text-xs sm:text-sm font-bold flex items-center gap-2 shadow-sm transition-all cursor-pointer"
+              >
+                <Download class="w-4 h-4" />
+                <span>Download</span>
+              </button>
             </div>
           </div>
 
-          <!-- Right: download button only -->
-          <button
-            @click="
-              handleDownload(quality.id, quality.url || data.originalUrl || '')
-            "
-            :disabled="!!downloadingId"
-            class="flex-none px-3.5 py-2 sm:px-4 sm:py-2 rounded-lg bg-white text-[#040303] text-xs sm:text-sm font-bold border border-gray-200 hover:bg-[#3D348B] hover:text-white hover:border-[#3D348B] transition-colors flex items-center gap-2 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+          <!-- Bottom status sub-row (full width) -->
+          <div
+            v-if="downloadingId === quality.id"
+            class="pt-2 border-t border-purple-100 flex items-center gap-2 text-xs text-[#3D348B] font-medium animate-pulse"
           >
-            <Loader2
-              v-if="downloadingId === quality.id"
-              class="w-4 h-4 animate-spin"
-            />
-            <Download v-else class="w-4 h-4" />
-            {{ downloadingId === quality.id ? "Processing" : "Download" }}
-          </button>
+            <Loader2 class="w-3.5 h-3.5 animate-spin flex-none" />
+            <span
+              >Sedang mengonversi &amp; menggabungkan audio/video di server...
+              Mohon tunggu.</span
+            >
+          </div>
+
+          <div
+            v-if="errorId === quality.id"
+            class="pt-2 border-t border-red-100 flex items-center gap-1.5 text-xs text-red-600 font-semibold"
+          >
+            <AlertCircle class="w-3.5 h-3.5 flex-none" />
+            <span>Gagal memproses media. Silakan coba klik Coba Lagi.</span>
+          </div>
+
+          <div
+            v-if="completedDownloads[quality.id]"
+            class="pt-2 border-t border-emerald-100 flex items-center justify-between gap-2 text-xs text-emerald-700 font-semibold"
+          >
+            <span>✅ File siap!</span>
+            <a
+              :href="completedDownloads[quality.id].url"
+              :download="completedDownloads[quality.id].name"
+              class="underline text-emerald-800"
+              >Klik di sini jika unduhan tidak otomatis dimulai</a
+            >
+          </div>
         </div>
       </div>
     </div>

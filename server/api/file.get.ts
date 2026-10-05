@@ -51,6 +51,12 @@ export default defineEventHandler(async (event) => {
       filename.endsWith(".mp3") ? "audio/mpeg" : "video/mp4"
     );
 
+    // HEAD request: respond with headers only, no body stream.
+    if (event.node.req.method === "HEAD") {
+      event.node.res.statusCode = 200;
+      return event.node.res.end();
+    }
+
     // Setup cleanup after sending
     event.node.res.on("finish", () => {
       setTimeout(() => {
