@@ -173,7 +173,10 @@ export default defineEventHandler(async (event) => {
     }
 
     if (playlistIndex) {
-      ytOptions.noPlaylist = false;
+      // Delete noPlaylist entirely — setting it to false makes dargs
+      // generate "--no-no-playlist" (invalid). The --playlist-items flag
+      // already implies playlist mode, so noPlaylist is not needed here.
+      delete ytOptions.noPlaylist;
       ytOptions.playlistItems = `${playlistIndex}`;
     }
 
