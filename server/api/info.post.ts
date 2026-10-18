@@ -82,6 +82,13 @@ export default defineEventHandler(async (event) => {
       // You might want to pass cookies or user agent here if strict
     });
 
+    // Shorter dimension of a format. Orientation-agnostic: 1920x1080 -> 1080,
+    // 720x1280 -> 720. Prevents portrait videos from being advertised as 1080p.
+    const shortSide = (f: any) =>
+      f && typeof f.width === "number" && typeof f.height === "number"
+        ? Math.min(f.width, f.height)
+        : (f?.height || 0);
+
     const processEntry = (entry: any, index: number | null = null) => {
       const formats = [];
       const availableFormats = entry.formats || [];
@@ -114,7 +121,7 @@ export default defineEventHandler(async (event) => {
         });
       } else {
         // 1080p
-        if (availableFormats.some((f: any) => f.height >= 1080)) {
+        if (availableFormats.some((f: any) => shortSide(f) >= 1080)) {
           formats.push({
             label: "1080p (HD)",
             id: "1080",
@@ -123,7 +130,7 @@ export default defineEventHandler(async (event) => {
           });
         }
         // 720p
-        if (availableFormats.some((f: any) => f.height >= 720)) {
+        if (availableFormats.some((f: any) => shortSide(f) >= 720)) {
           formats.push({
             label: "720p (HD)",
             id: "720",
@@ -132,7 +139,7 @@ export default defineEventHandler(async (event) => {
           });
         }
         // 480p
-        if (availableFormats.some((f: any) => f.height >= 480)) {
+        if (availableFormats.some((f: any) => shortSide(f) >= 480)) {
           formats.push({
             label: "480p",
             id: "480",

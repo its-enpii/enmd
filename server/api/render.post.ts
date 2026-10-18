@@ -83,10 +83,42 @@ export default defineEventHandler(async (event) => {
     // Numeric quality (1080 / 720 / 480 / 360). Use `/best` as a final
     // fallback so single-resolution videos aren't rejected with
     // "Requested format is not available".
+    //
+    // The bundled yt-dlp (2026.08.19) does NOT understand `short_side`, and
+    // `or` / `|` filters are unsupported too. So we detect orientation with a
+    // light metadata probe and filter on the dimension that represents the
+    // requested quality: `height` for landscape, `width` for portrait
+    // (e.g. 720x1280 -> width<=720).
+    let meta: any = null;
+    try {
+      meta = await ytDlp(cleanUrl, {
+        dumpSingleJson: true,
+        simulate: true,
+        noWarnings: true,
+        jsRuntimes: "node",
+        ...(playlistIndex ? { playlistItems: String(playlistIndex) } : {}),
+      });
+      if (meta && meta.entries && meta.entries.length) meta = meta.entries[0];
+    } catch {
+      meta = null;
+    }
+
+    const vf = (meta?.formats || []).find(
+      (f: any) =>
+        f &&
+        typeof f.width === "number" &&
+        typeof f.height === "number" &&
+        f.vcodec &&
+        f.vcodec !== "none",
+    );
+    const isPortrait = vf ? vf.width < vf.height : false;
+    // If the probe failed, fall back to the proven `height<=X` behaviour.
+    const dim = isPortrait ? "width" : "height";
+
     formatArgs = {
       format:
-        `bestvideo[height<=${qualityStr}]+bestaudio/` +
-        `best[height<=${qualityStr}]/best`,
+        `bestvideo[${dim}<=${qualityStr}]+bestaudio/` +
+        `best[${dim}<=${qualityStr}]/best`,
       mergeOutputFormat: "mp4",
     };
   }

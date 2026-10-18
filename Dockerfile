@@ -1,5 +1,5 @@
 # Use Node.js LTS (Alpine for smaller size)
-FROM node:20-alpine
+FROM node:22-alpine
 
 # Install system dependencies required for yt-dlp and ffmpeg
 # python3 is needed for yt-dlp
