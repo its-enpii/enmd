@@ -14,6 +14,14 @@ export default defineEventHandler(async (event) => {
     finalUrl = finalUrl.replace("threads.com", "threads.net");
   }
 
+  // Bilibili share-links always carry noise query params (site, lang,
+  // spm_id_from, vd_source, ...) that break the BiliBili extractor
+  // (it falls back to generic and returns 0 formats). The BV id in the
+  // path is sufficient, so strip the entire query string.
+  if (/bilibili\.com/i.test(finalUrl)) {
+    try { const u = new URL(finalUrl); u.search = ""; finalUrl = u.toString(); } catch {}
+  }
+
   // Only strip tracking & referral parameters.
   // IMPORTANT: parameters such as `v` (YouTube/Facebook), `list`, playlist
   // ids, etc. MUST be preserved, otherwise yt-dlp treats the link as an

@@ -57,8 +57,17 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  const cleanUrl = typeof url === "string" ? url.trim() : url;
+  let cleanUrl = typeof url === "string" ? url.trim() : url;
   const qualityStr = String(quality);
+
+  // Bilibili share-links always carry noise query params (site, lang,
+  // spm_id_from, vd_source, ...) that break the BiliBili extractor
+  // (it falls back to generic and returns 0 formats). The BV id in the
+  // path is sufficient, so strip the entire query string.
+  // Keep this in sync with the same rule in info.post.ts.
+  if (typeof cleanUrl === "string" && /bilibili\.com/i.test(cleanUrl)) {
+    try { const u = new URL(cleanUrl); u.search = ""; cleanUrl = u.toString(); } catch {}
+  }
 
   // Determine format string for yt-dlp
   let formatArgs: any = {};
