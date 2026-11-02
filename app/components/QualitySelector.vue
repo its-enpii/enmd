@@ -10,6 +10,7 @@ const props = defineProps<{
 
 const downloadingId = ref<string | null>(null);
 const errorId = ref<string | null>(null);
+const renderHintId = ref<string | null>(null);
 const completedDownloads = ref<Record<string, { url: string; name: string }>>({});
 const { renderVideo } = useDownloader();
 const { addToHistory } = useHistory();
@@ -33,6 +34,9 @@ const handleDownload = async (qualityId: string, url: string) => {
 
   downloadingId.value = qualityId;
   errorId.value = null;
+  // Hint is shown only for the first (cold) render of this quality; cached
+  // repeats never reach this point.
+  renderHintId.value = qualityId;
 
   try {
     // 1. Request Server to Render/Merge
@@ -84,6 +88,7 @@ const handleDownload = async (qualityId: string, url: string) => {
     }, 200);
 
     // Reset after short delay
+    renderHintId.value = null;
     setTimeout(() => {
       downloadingId.value = null;
     }, 3000);
@@ -91,6 +96,7 @@ const handleDownload = async (qualityId: string, url: string) => {
     console.error(err);
     // Immediately reset so the button never stays stuck on "Processing".
     downloadingId.value = null;
+    renderHintId.value = null;
     // Mark the failing option so its button becomes "Coba Lagi".
     errorId.value = qualityId;
   }
@@ -212,6 +218,14 @@ const handleDownload = async (qualityId: string, url: string) => {
                 <span>Download</span>
               </button>
             </div>
+          </div>
+
+          <!-- Slow-platform hint (first render per quality only) -->
+          <div
+            v-if="downloadingId === quality.id && renderHintId === quality.id"
+            class="flex items-center gap-1.5 text-xs text-gray-500 font-medium"
+          >
+            <span>Bisa sampai 3 menit untuk platform lambat. Jangan tutup halaman ini.</span>
           </div>
 
           <!-- Compact error message (only when this option failed) -->

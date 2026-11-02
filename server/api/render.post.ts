@@ -5,6 +5,7 @@ import { randomUUID } from "crypto";
 import fs from "fs";
 import { pipeline } from "stream/promises";
 import { Readable } from "stream";
+import { createRenderJob, type RenderJob } from "../utils/renderJobs";
 
 /**
  * Resolve a usable ffmpeg binary path.
@@ -46,28 +47,18 @@ function resolveFfmpegPath(): string | undefined {
   return undefined;
 }
 
-export default defineEventHandler(async (event) => {
-  const body = await readBody(event);
-  const { url, quality, playlistIndex } = body;
-
-  if (!url || !quality) {
-    throw createError({
-      statusCode: 400,
-      statusMessage: "Missing url or quality",
-    });
-  }
-
-  let cleanUrl = typeof url === "string" ? url.trim() : url;
-  const qualityStr = String(quality);
-
-  // Bilibili share-links always carry noise query params (site, lang,
-  // spm_id_from, vd_source, ...) that break the BiliBili extractor
-  // (it falls back to generic and returns 0 formats). The BV id in the
-  // path is sufficient, so strip the entire query string.
-  // Keep this in sync with the same rule in info.post.ts.
-  if (typeof cleanUrl === "string" && /bilibili\.com/i.test(cleanUrl)) {
-    try { const u = new URL(cleanUrl); u.search = ""; cleanUrl = u.toString(); } catch {}
-  }
+/**
+ * Runs the actual render (format probe + yt-dlp / direct CDN download) and
+ * resolves with the filename of the produced file.
+ */
+async function runRender(params: {
+  cleanUrl: string;
+  qualityStr: string;
+  playlistIndex?: number;
+  filename: string;
+  downloadPath: string;
+}): Promise<string> {
+  const { cleanUrl, qualityStr, playlistIndex, filename, downloadPath } = params;
 
   // Determine format string for yt-dlp
   let formatArgs: any = {};
@@ -132,15 +123,6 @@ export default defineEventHandler(async (event) => {
     };
   }
 
-  // Ensure the temporary downloads directory exists before rendering.
-  const downloadDir = join(process.cwd(), "downloads");
-  if (!fs.existsSync(downloadDir)) {
-    fs.mkdirSync(downloadDir, { recursive: true });
-  }
-
-  const filename = `${randomUUID()}.${ext}`;
-  const downloadPath = join(downloadDir, filename);
-
   // ---------------------------------------------------------------------------
   // Direct CDN download path.
   //
@@ -188,7 +170,7 @@ export default defineEventHandler(async (event) => {
       });
     }
 
-    return { status: "success", filename };
+    return filename;
   }
 
   try {
@@ -259,10 +241,7 @@ export default defineEventHandler(async (event) => {
     }
 
     // Return the filename so the frontend can request it via /api/file
-    return {
-      status: "success",
-      filename: filename,
-    };
+    return filename;
   } catch (error: any) {
     console.error("Render processing error:", error);
     // Preserve an already-formed HTTP error (e.g. the file-verification error).
@@ -274,4 +253,87 @@ export default defineEventHandler(async (event) => {
       statusMessage: "Failed to render media",
     });
   }
+}
+
+export default defineEventHandler(async (event) => {
+  const body = await readBody(event);
+  const { url, quality, playlistIndex, wait } = body;
+
+  if (!url || !quality) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: "Missing url or quality",
+    });
+  }
+
+  let cleanUrl = typeof url === "string" ? url.trim() : url;
+  const qualityStr = String(quality);
+
+  // Bilibili share-links always carry noise query params (site, lang,
+  // spm_id_from, vd_source, ...) that break the BiliBili extractor
+  // (it falls back to generic and returns 0 formats). The BV id in the
+  // path is sufficient, so strip the entire query string.
+  // Keep this in sync with the same rule in info.post.ts.
+  if (typeof cleanUrl === "string" && /bilibili\.com/i.test(cleanUrl)) {
+    try { const u = new URL(cleanUrl); u.search = ""; cleanUrl = u.toString(); } catch {}
+  }
+
+  const ext = qualityStr === "audio" ? "mp3" : "mp4";
+
+  // Ensure the temporary downloads directory exists before rendering.
+  const downloadDir = join(process.cwd(), "downloads");
+  if (!fs.existsSync(downloadDir)) {
+    fs.mkdirSync(downloadDir, { recursive: true });
+  }
+
+  const filename = `${randomUUID()}.${ext}`;
+  const downloadPath = join(downloadDir, filename);
+  const renderParams = {
+    cleanUrl,
+    qualityStr,
+    playlistIndex,
+    filename,
+    downloadPath,
+  };
+
+  // ---------------------------------------------------------------------------
+  // Backward-compatible blocking flow (`wait: true`): used by curl/tests.
+  // ---------------------------------------------------------------------------
+  if (wait === true) {
+    const result = await runRender(renderParams);
+    return { status: "success", filename: result };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Async job flow: return 202 immediately, render in the background.
+  //
+  // The render promise is NOT awaited, so the response goes out before the
+  // proxy timeout. A client retry gets a brand-new job (the frontend polls
+  // instead of re-POSTing, so no double-download happens in normal use).
+  // ---------------------------------------------------------------------------
+  const job: RenderJob = createRenderJob(randomUUID(), filename);
+  const jobId = job.id;
+
+  void runRender(renderParams)
+    .then((renderedFilename) => {
+      job.filename = renderedFilename;
+      job.status = "success";
+      job.finishedAt = Date.now();
+      console.log(
+        `[render] job ${jobId} success in ${Math.round(
+          (job.finishedAt - job.startedAt) / 1000,
+        )}s -> ${renderedFilename}`,
+      );
+    })
+    .catch((error: any) => {
+      job.status = "error";
+      job.finishedAt = Date.now();
+      job.error =
+        error?.statusMessage || error?.message || "Failed to render media";
+      console.error(`[render] job ${jobId} failed:`, job.error);
+    });
+
+  console.log(`[render] job ${jobId} accepted for ${qualityStr}: ${cleanUrl}`);
+  setResponseStatus(event, 202);
+  return { status: "processing", jobId, filename };
 });
